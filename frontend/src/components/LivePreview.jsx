@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function zoneColor(zoneType) {
   return zoneType === "danger_zone" ? "#ef4444" : "#22c55e";
@@ -21,6 +21,7 @@ export default function LivePreview({
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     const draw = () => {
@@ -97,6 +98,15 @@ export default function LivePreview({
     return () => window.removeEventListener("resize", draw);
   }, [savedZones, currentPolygon, activeZoneType, workerCount, previewUrl]);
 
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(document.fullscreenElement === containerRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
   const handleClick = (event) => {
     if (!canDraw || polygonClosed || !containerRef.current) {
       return;
@@ -105,6 +115,22 @@ export default function LivePreview({
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
     onAddPoint({ x, y });
+  };
+
+  const handleFullscreenToggle = async () => {
+    if (!containerRef.current) {
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement === containerRef.current) {
+        await document.exitFullscreen();
+      } else {
+        await containerRef.current.requestFullscreen();
+      }
+    } catch (error) {
+      console.error("Failed to toggle fullscreen preview.", error);
+    }
   };
 
   return (
@@ -135,6 +161,9 @@ export default function LivePreview({
         </button>
         <button type="button" className="button button-secondary" onClick={onSnapshot}>
           Snapshot
+        </button>
+        <button type="button" className="button button-secondary" onClick={handleFullscreenToggle}>
+          {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
         </button>
       </div>
     </section>

@@ -314,6 +314,19 @@ input {
   border: 1px solid rgba(148, 163, 184, 0.24);
 }
 
+.preview-stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto;
+  border-radius: 0;
+  border: none;
+  background: #020617;
+}
+
+.preview-stage:fullscreen .preview-image {
+  object-fit: contain;
+}
+
 .preview-image,
 .preview-overlay {
   position: absolute;
