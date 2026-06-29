@@ -6,7 +6,15 @@ export default function AIModelPanel({ models, enabledModels, onToggle, isDisabl
         {models.map((model) => (
           <label key={model.key} className={`model-row${isDisabled(model.key) ? " disabled" : ""}`}>
             <div className="model-meta">
-              <div className="model-icon">{model.icon}</div>
+              <div
+                className="model-icon"
+                style={{
+                  color: model.iconColor,
+                  background: model.iconBg,
+                }}
+              >
+                {model.icon}
+              </div>
               <div className="model-label">{model.label}</div>
             </div>
             <button

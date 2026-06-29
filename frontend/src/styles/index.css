@@ -380,7 +380,12 @@ input {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  background: rgba(46, 112, 255, 0.12);
+  flex: 0 0 38px;
+}
+
+.model-icon svg {
+  width: 22px;
+  height: 22px;
 }
 
 .model-label {

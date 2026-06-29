@@ -4,6 +4,14 @@ import AIModelPanel from "../components/AIModelPanel";
 import DetectionResults from "../components/DetectionResults";
 import InputSourceCard from "../components/InputSourceCard";
 import LivePreview from "../components/LivePreview";
+import {
+  DangerZoneIcon,
+  FireIcon,
+  ForkliftIcon,
+  HelmetIcon,
+  WorkerGroupIcon,
+  WorkZoneIcon,
+} from "../components/ModelIcons";
 import ZoneTools from "../components/ZoneTools";
 import {
   connectSource,
@@ -23,12 +31,47 @@ const MAX_STREAM_MODELS = 2;
 const RESULTS_PAGE_SIZE = 10;
 
 const MODELS = [
-  { key: "ppe", label: "PPE Detection", icon: "PPE", primary: true },
-  { key: "work_situation", label: "Work Situation Classification", icon: "WS", primary: true },
-  { key: "smoke_fire", label: "Smoke & Fire Detection", icon: "SF", primary: true },
-  { key: "worker_forklift", label: "Worker-Forklift Detection", icon: "FW", primary: true },
-  { key: "danger_zone", label: "Danger Zone Detection", icon: "DZ", primary: true },
-  { key: "work_zone", label: "Work Zone Detection", icon: "WZ", primary: true },
+  { key: "ppe", label: "PPE Detection", icon: <HelmetIcon />, iconColor: "#2563eb", iconBg: "#e7efff", primary: true },
+  {
+    key: "work_situation",
+    label: "Work Situation Classification",
+    icon: <WorkerGroupIcon />,
+    iconColor: "#7c3aed",
+    iconBg: "#f1e8ff",
+    primary: true,
+  },
+  {
+    key: "smoke_fire",
+    label: "Smoke & Fire Detection",
+    icon: <FireIcon />,
+    iconColor: "#ea580c",
+    iconBg: "#fff1e7",
+    primary: true,
+  },
+  {
+    key: "worker_forklift",
+    label: "Worker-Forklift Detection",
+    icon: <ForkliftIcon />,
+    iconColor: "#15803d",
+    iconBg: "#e9f8ee",
+    primary: true,
+  },
+  {
+    key: "danger_zone",
+    label: "Danger Zone Detection",
+    icon: <DangerZoneIcon />,
+    iconColor: "#dc2626",
+    iconBg: "#ffe9e9",
+    primary: true,
+  },
+  {
+    key: "work_zone",
+    label: "Work Zone Detection",
+    icon: <WorkZoneIcon />,
+    iconColor: "#16a34a",
+    iconBg: "#e8f9ee",
+    primary: true,
+  },
 ];
 
 const EMPTY_PAGINATION = { page: 1, page_size: RESULTS_PAGE_SIZE, total_events: 0, total_pages: 1 };
