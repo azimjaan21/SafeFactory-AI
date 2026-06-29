@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Django REST backend · React dashboard · Ultralytics YOLO inference · Polygon zone analytics
+  Django REST backend | React dashboard | Ultralytics YOLO inference | Polygon zone analytics
 </p>
 
 <p align="center">
@@ -26,23 +26,15 @@ The current repository is built as a practical MVP for model evaluation, interna
 
 ## Preview
 
-Use this section for your GitHub visuals.
+### Dashboard Overview
 
-Suggested assets:
+![SafeFactory AI Dashboard](docs/assets/dashboard-overview.png)
 
-- `docs/assets/dashboard-overview.png`
+Additional visuals can be added later, for example:
+
 - `docs/assets/live-preview.gif`
 - `docs/assets/results-table.png`
-
-Example markup to enable after you add files:
-
-```md
-![Dashboard Overview](docs/assets/dashboard-overview.png)
-```
-
-```md
-![Live Preview Demo](docs/assets/live-preview.gif)
-```
+- `docs/assets/zone-tools.png`
 
 ## Key Features
 
@@ -134,6 +126,7 @@ SafeFactory AI/
 │  ├─ dist/
 │  └─ package.json
 ├─ ai_models/                # local model weights, ignored by git
+├─ docs/assets/
 ├─ monitoring_worker_forklift.py
 ├─ spatial_zone_monitor_demo.py
 ├─ requirements.txt
@@ -316,7 +309,6 @@ npm.cmd run build
 
 Recommended additions for a stronger repository presentation:
 
-- `docs/assets/dashboard-overview.png`
 - `docs/assets/live-preview.gif`
 - `docs/assets/zone-tools.png`
 - `docs/assets/results-table.png`
