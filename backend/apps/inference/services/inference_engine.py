@@ -3,8 +3,10 @@ from __future__ import annotations
 from collections import defaultdict
 from math import hypot
 
+import numpy as np
 from django.conf import settings
 
+from .abnormal_behavior_analyzer import AbnormalBehaviorAnalyzer
 from .annotator import Annotator
 from .forklift_logic import ForkliftSafetyAnalyzer
 from .model_registry import ModelRegistry
@@ -20,28 +22,34 @@ class InferenceEngine:
             danger_distance=settings.SAFEFACTORY_FORKLIFT_DANGER_DISTANCE,
         )
         self.annotator = Annotator()
+        self.abnormal_analyzer = AbnormalBehaviorAnalyzer()
         self.reset_runtime_state()
 
     def reset_runtime_state(self):
         self.worker_tracks = {}
         self.next_worker_track_id = 1
         self.frame_index = 0
+        self.abnormal_analyzer.reset()
+
+    _POSE_DEPENDENT = {"danger_zone", "work_zone", "worker_forklift",
+                       "fall_detection", "running_detection", "inactivity_detection"}
 
     def normalize_enabled_models(self, enabled_models):
         normalized = set(enabled_models)
-        if normalized & {"danger_zone", "work_zone", "worker_forklift"}:
+        if normalized & self._POSE_DEPENDENT:
             normalized.add("pose_anchor")
         return sorted(normalized)
 
     def enforce_streaming_limit(self, source_type, enabled_models):
         normalized = self.normalize_enabled_models(enabled_models)
-        if source_type == "image":
+        if source_type in {"image", "video"}:
             return normalized
 
-        primary_models = [model_key for model_key in normalized if model_key != "pose_anchor"]
+        primary_models = [model_key for model_key in normalized
+                          if model_key not in {"pose_anchor", "fall_detection", "running_detection", "inactivity_detection"}]
         if len(primary_models) > settings.SAFEFACTORY_MAX_STREAM_MODELS:
             raise ValueError(
-                f"Streaming sources support at most {settings.SAFEFACTORY_MAX_STREAM_MODELS} AI models at once."
+                f"Live streams support at most {settings.SAFEFACTORY_MAX_STREAM_MODELS} AI models at once."
             )
         return normalized
 
@@ -103,6 +111,12 @@ class InferenceEngine:
         else:
             forklift_interactions = []
 
+        active_detectors = {k for k in ("fall_detection", "running_detection", "inactivity_detection")
+                            if k in enabled_models}
+        if active_detectors and workers:
+            abnormal_events = self.abnormal_analyzer.analyze(workers, enabled=active_detectors)
+            events.extend(abnormal_events)
+
         if {"danger_zone", "work_zone"} & set(enabled_models):
             workers, work_zone_counts = self.zone_analyzer.analyze(
                 workers,
@@ -154,18 +168,19 @@ class InferenceEngine:
             "frame": annotated,
             "events": events,
             "enabled_models": enabled_models,
-            "worker_count": sum(work_zone_counts) if work_zone_counts else 0,
+            "worker_count": sum(work_zone_counts) if work_zone_counts else len(workers),
         }
 
     def _run_generic_detector(self, frame, model_key, default_title):
         model = self.registry.get_model(model_key)
-        result = model.predict(
-            frame,
-            conf=settings.SAFEFACTORY_DEFAULT_CONFIDENCE,
-            verbose=False,
-            device=self.registry.device,
-            half=self.registry.use_half,
-        )[0]
+        with ModelRegistry._infer_lock:
+            result = model.predict(
+                frame,
+                conf=settings.SAFEFACTORY_DEFAULT_CONFIDENCE,
+                verbose=False,
+                device=self.registry.device,
+                half=self.registry.use_half,
+            )[0]
         detections = []
         events = []
         for box in result.boxes:
@@ -193,16 +208,19 @@ class InferenceEngine:
 
     def _run_pose_detector(self, frame):
         model = self.registry.get_model("pose_anchor")
-        result = model.predict(
-            frame,
-            conf=settings.SAFEFACTORY_DEFAULT_CONFIDENCE,
-            verbose=False,
-            device=self.registry.device,
-            half=self.registry.use_half,
-        )[0]
+        with ModelRegistry._infer_lock:
+            result = model.predict(
+                frame,
+                conf=settings.SAFEFACTORY_POSE_CONFIDENCE,
+                verbose=False,
+                device=self.registry.device,
+                half=False,
+            )[0]
         workers = []
         if result.boxes is None or result.keypoints is None:
             return workers
+
+        frame_h, frame_w = frame.shape[:2]
 
         for index, box in enumerate(result.boxes):
             cls_id = int(box.cls[0])
@@ -214,12 +232,19 @@ class InferenceEngine:
             keypoints_xy = result.keypoints.xy[index].cpu().numpy()
             keypoints_conf = result.keypoints.conf[index].cpu().numpy() if result.keypoints.conf is not None else None
             anchor = get_worker_anchor(keypoints_xy, keypoints_conf, bbox)
+
+            kp_norm = np.zeros((17, 3), dtype=np.float32)
+            kp_norm[:, 0] = keypoints_xy[:, 0] / max(frame_w, 1)
+            kp_norm[:, 1] = keypoints_xy[:, 1] / max(frame_h, 1)
+            kp_norm[:, 2] = keypoints_conf if keypoints_conf is not None else np.ones(17, dtype=np.float32)
+
             workers.append(
                 {
                     "box": bbox,
                     "anchor": anchor,
                     "confidence": confidence,
                     "keypoints_xy": keypoints_xy,
+                    "keypoints_norm": kp_norm,
                 }
             )
         return workers
@@ -238,10 +263,10 @@ class InferenceEngine:
             best_track_id = None
             best_distance = None
             for track_id, track in self.worker_tracks.items():
-                if self.frame_index - track["last_frame"] > 90:
+                if self.frame_index - track["last_frame"] > 150:
                     continue
                 distance = hypot(anchor[0] - track["anchor"][0], anchor[1] - track["anchor"][1])
-                if distance > 80:
+                if distance > 150:
                     continue
                 if best_distance is None or distance < best_distance:
                     best_distance = distance
@@ -263,13 +288,14 @@ class InferenceEngine:
 
     def _run_forklift_detector(self, frame):
         model = self.registry.get_model("worker_forklift")
-        result = model.predict(
-            frame,
-            conf=settings.SAFEFACTORY_DEFAULT_CONFIDENCE,
-            verbose=False,
-            device=self.registry.device,
-            half=self.registry.use_half,
-        )[0]
+        with ModelRegistry._infer_lock:
+            result = model.predict(
+                frame,
+                conf=settings.SAFEFACTORY_DEFAULT_CONFIDENCE,
+                verbose=False,
+                device=self.registry.device,
+                half=self.registry.use_half,
+            )[0]
         detections = []
         for box in result.boxes:
             cls_id = int(box.cls[0])

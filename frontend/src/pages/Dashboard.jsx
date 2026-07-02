@@ -1,383 +1,304 @@
-import { useEffect, useMemo, useState } from "react";
+import { createRef, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import AIModelPanel from "../components/AIModelPanel";
-import DetectionResults from "../components/DetectionResults";
-import InputSourceCard from "../components/InputSourceCard";
-import LivePreview from "../components/LivePreview";
+import CameraPanel from "../components/CameraPanel";
 import {
   DangerZoneIcon,
+  FallDetectionIcon,
   FireIcon,
   ForkliftIcon,
   HelmetIcon,
+  InactivityDetectionIcon,
+  PoseIcon,
+  RunningDetectionIcon,
   WorkerGroupIcon,
   WorkZoneIcon,
 } from "../components/ModelIcons";
-import ZoneTools from "../components/ZoneTools";
-import {
-  connectSource,
-  getFrameUrl,
-  getResults,
-  getStreamUrl,
-  getZones,
-  pauseInference,
-  resumeInference,
-  saveSnapshot,
-  saveZone,
-  startInference,
-  stopInference,
-} from "../services/api";
+import { getSettings } from "../services/api";
 
 const MAX_STREAM_MODELS = 2;
-const RESULTS_PAGE_SIZE = 10;
 
 const MODELS = [
-  { key: "ppe", label: "PPE Detection", icon: <HelmetIcon />, iconColor: "#2563eb", iconBg: "#e7efff", primary: true },
-  {
-    key: "work_situation",
-    label: "Work Situation Classification",
-    icon: <WorkerGroupIcon />,
-    iconColor: "#7c3aed",
-    iconBg: "#f1e8ff",
-    primary: true,
-  },
-  {
-    key: "smoke_fire",
-    label: "Smoke & Fire Detection",
-    icon: <FireIcon />,
-    iconColor: "#ea580c",
-    iconBg: "#fff1e7",
-    primary: true,
-  },
-  {
-    key: "worker_forklift",
-    label: "Worker-Forklift Detection",
-    icon: <ForkliftIcon />,
-    iconColor: "#15803d",
-    iconBg: "#e9f8ee",
-    primary: true,
-  },
-  {
-    key: "danger_zone",
-    label: "Danger Zone Detection",
-    icon: <DangerZoneIcon />,
-    iconColor: "#dc2626",
-    iconBg: "#ffe9e9",
-    primary: true,
-  },
-  {
-    key: "work_zone",
-    label: "Work Zone Detection",
-    icon: <WorkZoneIcon />,
-    iconColor: "#16a34a",
-    iconBg: "#e8f9ee",
-    primary: true,
-  },
+  { key: "pose_anchor",        label: "Pose Detection",               icon: <PoseIcon />,              iconColor: "#0891b2", iconBg: "#e0f7fa", primary: false },
+  { key: "ppe",                label: "PPE Detection",                icon: <HelmetIcon />,            iconColor: "#2563eb", iconBg: "#e7efff", primary: true },
+  { key: "work_situation",     label: "Work Situation",               icon: <WorkerGroupIcon />,       iconColor: "#7c3aed", iconBg: "#f1e8ff", primary: true },
+  { key: "smoke_fire",         label: "Smoke & Fire",                 icon: <FireIcon />,              iconColor: "#ea580c", iconBg: "#fff1e7", primary: true },
+  { key: "worker_forklift",    label: "Worker-Forklift",              icon: <ForkliftIcon />,          iconColor: "#15803d", iconBg: "#e9f8ee", primary: true },
+  { key: "danger_zone",        label: "Danger Zone",                  icon: <DangerZoneIcon />,        iconColor: "#dc2626", iconBg: "#ffe9e9", primary: true },
+  { key: "work_zone",          label: "Work Zone",                    icon: <WorkZoneIcon />,          iconColor: "#16a34a", iconBg: "#e8f9ee", primary: true },
+  { key: "fall_detection",     label: "Fall Detection",               icon: <FallDetectionIcon />,     iconColor: "#dc2626", iconBg: "#ffe9e9", primary: false },
+  { key: "running_detection",  label: "Unsafe Running",               icon: <RunningDetectionIcon />,  iconColor: "#b45309", iconBg: "#fef3c7", primary: false },
+  { key: "inactivity_detection", label: "Inactivity",                icon: <InactivityDetectionIcon />, iconColor: "#6d28d9", iconBg: "#ede9fe", primary: false },
 ];
 
-const EMPTY_PAGINATION = { page: 1, page_size: RESULTS_PAGE_SIZE, total_events: 0, total_pages: 1 };
-const VISIBLE_MODEL_KEYS = new Set(MODELS.map((model) => model.key));
+const MODEL_LABELS = Object.fromEntries(MODELS.map((m) => [m.key, m.label]));
+const SEVERITY_COLORS = { danger: "#dc2626", warning: "#f59e0b", info: "#2563eb" };
+
+function MiniDetectionResults({ events, totalCount, onViewAll }) {
+  const recent = events.slice(0, 8);
+  return (
+    <section className="card mini-results-card">
+      <div className="mini-results-header">
+        <div className="card-title" style={{ marginBottom: 0 }}>
+          Recent Detections
+          <span className="mini-results-count">{totalCount}</span>
+        </div>
+        <button type="button" className="view-all-btn" onClick={onViewAll}>View All →</button>
+      </div>
+      <div className="mini-events-list">
+        {recent.length ? recent.map((event) => (
+          <div key={`${event.slot}-${event.id}`} className="mini-event-row">
+            <span className="severity-dot" style={{ background: SEVERITY_COLORS[event.severity?.toLowerCase()] || "#94a3b8" }} />
+            <span className="mini-event-label">{event.label}</span>
+            <span className="mini-event-camera">Camera {event.slot + 1}</span>
+            <span className="mini-event-time">{new Date(event.timestamp).toLocaleTimeString()}</span>
+          </div>
+        )) : (
+          <div className="mini-empty">No detections yet.</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function useCameraCount() {
+  const [count] = useState(() => {
+    const stored = parseInt(localStorage.getItem("safefactory_camera_count") || "1", 10);
+    return Math.max(1, Math.min(4, stored));
+  });
+  return count;
+}
 
 export default function Dashboard() {
-  const [sourceType, setSourceType] = useState("rtsp");
-  const [rtspUrl, setRtspUrl] = useState("");
-  const [file, setFile] = useState(null);
-  const [connectedSource, setConnectedSource] = useState(null);
-  const [enabledModels, setEnabledModels] = useState(["ppe"]);
-  const [sessionStatus, setSessionStatus] = useState("idle");
-  const [savedZones, setSavedZones] = useState([]);
-  const [activeZoneType, setActiveZoneType] = useState("danger_zone");
-  const [currentPolygon, setCurrentPolygon] = useState([]);
-  const [polygonClosed, setPolygonClosed] = useState(false);
-  const [events, setEvents] = useState([]);
-  const [pagination, setPagination] = useState(EMPTY_PAGINATION);
-  const [resultsPage, setResultsPage] = useState(1);
-  const [workerCount, setWorkerCount] = useState(0);
-  const [previewVersion, setPreviewVersion] = useState(Date.now());
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+  const cameraCount = useCameraCount();
 
-  const activeSourceType = connectedSource?.source_type || sourceType;
-  const isStreamingSource = activeSourceType !== "image";
-  const selectedPrimaryCount = enabledModels.filter(
-    (modelKey) => MODELS.find((item) => item.key === modelKey)?.primary,
-  ).length;
+  const [enabledModels, setEnabledModels] = useState(["pose_anchor", "ppe"]);
+  const [inferenceStatus, setInferenceStatus] = useState("idle"); // "idle" | "running" | "stopping"
+  const [runningModels, setRunningModels] = useState([]);         // actual models backend confirmed
+  const [cudaEnabled, setCudaEnabled] = useState(null);
+  const [globalLoading, setGlobalLoading] = useState(false);
 
+  const panelRefs = useRef([]);
+  panelRefs.current = useMemo(
+    () => Array.from({ length: cameraCount }, (_, i) => panelRefs.current[i] ?? createRef()),
+    [cameraCount],
+  );
+
+  // Per-camera event feed: { [slot]: { events: [...], total: number } }
+  const [eventsBySlot, setEventsBySlot] = useState({});
+
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  // Load CUDA info once
   useEffect(() => {
-    if (!connectedSource?.id) {
-      return;
-    }
-    getZones(connectedSource.id)
-      .then(setSavedZones)
-      .catch((error) => setMessage(error.response?.data?.detail || "Failed to load zones."));
-  }, [connectedSource?.id]);
+    getSettings()
+      .then((d) => setCudaEnabled(d.runtime?.gpu_enabled ?? false))
+      .catch(() => setCudaEnabled(false));
+  }, []);
 
-  useEffect(() => {
-    if (!["running", "paused", "completed", "connected"].includes(sessionStatus)) {
-      return undefined;
-    }
+  const showToast = (text, type) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    const resolved = type ?? (/fail|error/i.test(text) ? "error" : "success");
+    setToast({ text, type: resolved, id: Date.now() });
+    toastTimer.current = setTimeout(() => setToast(null), resolved === "error" ? 5000 : 3000);
+  };
 
-    const intervalId = window.setInterval(async () => {
-      try {
-        const result = await getResults(resultsPage, RESULTS_PAGE_SIZE);
-        setEvents(result.events || []);
-        setWorkerCount(result.worker_count || 0);
-        setSessionStatus(result.status || "idle");
-        setPagination(result.pagination || EMPTY_PAGINATION);
-        if (connectedSource?.source_type === "image" || result.status !== "running") {
-          setPreviewVersion(Date.now());
-        }
-      } catch (error) {
-        setMessage(error.response?.data?.detail || "Failed to fetch detection results.");
-      }
-    }, 1000);
-
-    return () => window.clearInterval(intervalId);
-  }, [connectedSource?.source_type, resultsPage, sessionStatus]);
-
-  useEffect(() => {
-    if (pagination.total_pages && resultsPage > pagination.total_pages) {
-      setResultsPage(pagination.total_pages);
-    }
-  }, [pagination.total_pages, resultsPage]);
-
-  const previewUrl = useMemo(() => {
-    if (!connectedSource) {
-      return "";
-    }
-    if (sessionStatus === "running" && connectedSource.source_type !== "image") {
-      return getStreamUrl(previewVersion);
-    }
-    return getFrameUrl(previewVersion);
-  }, [connectedSource, sessionStatus, previewVersion]);
-
-  const connectionSummary = connectedSource
-    ? `${connectedSource.source_type.toUpperCase()} | ${connectedSource.frame_width}x${connectedSource.frame_height}`
-    : "";
-
-  const canDraw = Boolean(connectedSource);
+  const selectedPrimaryCount = enabledModels.filter((k) => MODELS.find((m) => m.key === k)?.primary).length;
 
   const toggleModel = (modelKey) => {
+    if (inferenceStatus === "running") {
+      showToast("Stop inference before changing models.", "warning");
+      return;
+    }
     setEnabledModels((current) => {
-      const model = MODELS.find((item) => item.key === modelKey);
-      const isPrimary = Boolean(model?.primary);
-
-      if (current.includes(modelKey)) {
-        return current.filter((item) => item !== modelKey);
-      }
-
-      const currentPrimaryCount = current.filter(
-        (item) => MODELS.find((modelItem) => modelItem.key === item)?.primary,
-      ).length;
-
-      if (isStreamingSource && isPrimary && currentPrimaryCount >= MAX_STREAM_MODELS) {
-        return current;
-      }
-
-      const next = [...current, modelKey];
-      return next;
+      const model = MODELS.find((m) => m.key === modelKey);
+      if (current.includes(modelKey)) return current.filter((k) => k !== modelKey);
+      if (model?.primary && selectedPrimaryCount >= MAX_STREAM_MODELS) return current;
+      return [...current, modelKey];
     });
   };
 
   const isModelDisabled = (modelKey) => {
-    if (!isStreamingSource) {
-      return false;
-    }
-
-    const model = MODELS.find((item) => item.key === modelKey);
-    if (!model?.primary || enabledModels.includes(modelKey)) {
-      return false;
-    }
+    if (inferenceStatus === "running") return true;
+    const model = MODELS.find((m) => m.key === modelKey);
+    if (!model?.primary || enabledModels.includes(modelKey)) return false;
     return selectedPrimaryCount >= MAX_STREAM_MODELS;
   };
 
-  const handleConnect = async () => {
-    setLoading(true);
-    setMessage("");
-    try {
-      if (sourceType === "rtsp" && !rtspUrl.trim()) {
-        setMessage("Enter an RTSP URL.");
-        return;
-      }
-      if (sourceType !== "rtsp" && !file) {
-        setMessage(`Choose a ${sourceType} file.`);
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append("source_type", sourceType);
-      if (sourceType === "rtsp") {
-        formData.append("rtsp_url", rtspUrl);
-      } else if (file) {
-        formData.append("file", file);
-      }
-
-      const response = await connectSource(formData);
-      setConnectedSource(response.source);
-      setSessionStatus(response.status);
-      setPreviewVersion(Date.now());
-      setCurrentPolygon([]);
-      setPolygonClosed(false);
-      setEvents([]);
-      setPagination(EMPTY_PAGINATION);
-      setResultsPage(1);
-      setMessage("Source connected.");
-    } catch (error) {
-      setMessage(error.response?.data?.detail || "Failed to connect source.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleStart = async () => {
-    if (!connectedSource) {
-      setMessage("Connect a source first.");
+    if (enabledModels.length === 0) {
+      showToast("Select at least one AI model.", "warning");
       return;
     }
-    setLoading(true);
-    setMessage("");
-    try {
-      const response = await startInference({
-        source_id: connectedSource.id,
-        enabled_models: enabledModels,
-      });
-      setEnabledModels(response.enabled_models.filter((modelKey) => VISIBLE_MODEL_KEYS.has(modelKey)));
-      setSessionStatus(response.status);
-      setPreviewVersion(Date.now());
-      setResultsPage(1);
-      setMessage("Inference started.");
-    } catch (error) {
-      setMessage(error.response?.data?.detail || "Failed to start inference.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    setGlobalLoading(true);
+    let confirmedModels = null;
+    let started = 0;
 
-  const handlePauseResume = async () => {
-    try {
-      const response = sessionStatus === "paused" ? await resumeInference() : await pauseInference();
-      setSessionStatus(response.status);
-    } catch (error) {
-      setMessage(error.response?.data?.detail || "Failed to update session.");
+    for (let i = 0; i < cameraCount; i++) {
+      const panel = panelRefs.current[i]?.current;
+      if (!panel) continue;
+      const models = await panel.start();
+      if (models) {
+        started++;
+        if (!confirmedModels) confirmedModels = models;
+      }
     }
+
+    if (started > 0) {
+      setRunningModels(confirmedModels || enabledModels);
+      setInferenceStatus("running");
+      showToast(`${started}/${cameraCount} camera${started > 1 ? "s" : ""} started.`, "success");
+    } else {
+      showToast("Failed to start inference. Cameras may not be connected yet.", "error");
+    }
+    setGlobalLoading(false);
   };
 
   const handleStop = async () => {
-    try {
-      const response = await stopInference();
-      setSessionStatus(response.status);
-      setPreviewVersion(Date.now());
-    } catch (error) {
-      setMessage(error.response?.data?.detail || "Failed to stop inference.");
+    setGlobalLoading(true);
+    setInferenceStatus("stopping");
+    for (let i = 0; i < cameraCount; i++) {
+      const panel = panelRefs.current[i]?.current;
+      if (panel?.isActive()) await panel.stop();
     }
+    setRunningModels([]);
+    setInferenceStatus("idle");
+    showToast("Inference stopped.", "success");
+    setGlobalLoading(false);
   };
 
-  const handleSaveZone = async () => {
-    if (!connectedSource || currentPolygon.length < 3) {
-      return;
-    }
-    try {
-      await saveZone({
-        source_id: connectedSource.id,
-        zone_type: activeZoneType,
-        points: currentPolygon,
-      });
-      const zones = await getZones(connectedSource.id);
-      setSavedZones(zones);
-      setCurrentPolygon([]);
-      setPolygonClosed(false);
-      setMessage("Zone saved.");
-    } catch (error) {
-      setMessage(error.response?.data?.detail || "Failed to save zone.");
-    }
-  };
+  const slots = useMemo(() => Array.from({ length: cameraCount }, (_, i) => i), [cameraCount]);
+  const gridClass = `cameras-grid cameras-grid-${cameraCount}`;
 
-  const handleSnapshot = async () => {
-    try {
-      await saveSnapshot();
-      setMessage("Snapshot saved.");
-    } catch (error) {
-      setMessage(error.response?.data?.detail || "Failed to save snapshot.");
-    }
-  };
+  // Merge every camera's recent events into one feed, newest first, tagged with its source camera
+  const { mergedEvents, totalEventCount } = useMemo(() => {
+    const merged = [];
+    let total = 0;
+    slots.forEach((slot) => {
+      const bucket = eventsBySlot[slot];
+      if (!bucket) return;
+      total += bucket.total || 0;
+      (bucket.events || []).forEach((event) => merged.push({ ...event, slot }));
+    });
+    merged.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    return { mergedEvents: merged, totalEventCount: total };
+  }, [eventsBySlot, slots]);
 
   return (
-    <div className="page">
+    <div className="dashboard-page">
       <header className="page-header">
-        <h1>AI Model Tester</h1>
-        <p>Test CCTV RTSP, image, or video with selectable AI models.</p>
+        <h1>SafeFactory AI</h1>
+        <p>Select AI models, then press Start to begin inference.</p>
       </header>
 
-      {message ? <div className="message-banner">{message}</div> : null}
+      {toast && (
+        <div key={toast.id} className={`toast toast-${toast.type}`}>
+          {toast.text}
+        </div>
+      )}
 
       <div className="dashboard-grid">
-        <InputSourceCard
-          sourceType={sourceType}
-          setSourceType={setSourceType}
-          rtspUrl={rtspUrl}
-          setRtspUrl={setRtspUrl}
-          file={file}
-          setFile={setFile}
-          onConnect={handleConnect}
-          onStart={handleStart}
-          sourceStatus={sessionStatus === "idle" ? connectedSource?.status : sessionStatus}
-          disabled={loading}
-          connectionSummary={connectionSummary}
-        />
-
-        <LivePreview
-          previewUrl={previewUrl}
-          savedZones={savedZones}
-          currentPolygon={currentPolygon}
-          activeZoneType={activeZoneType}
-          onAddPoint={(point) => setCurrentPolygon((current) => [...current, point])}
-          onFinishPolygon={() => {
-            if (currentPolygon.length >= 3) {
-              setPolygonClosed(true);
-            }
-          }}
-          onPauseResume={handlePauseResume}
-          onStop={handleStop}
-          onSnapshot={handleSnapshot}
-          sessionStatus={sessionStatus}
-          canDraw={canDraw}
-          workerCount={workerCount}
-          polygonClosed={polygonClosed}
-        />
-
-        <div className="right-column">
+        {/* Left: AI Models + Inference Controls */}
+        <div className="left-column">
           <AIModelPanel
             models={MODELS}
             enabledModels={enabledModels}
             onToggle={toggleModel}
             isDisabled={isModelDisabled}
           />
-          {isStreamingSource ? (
-            <div className="stream-limit-hint">Streaming mode allows up to 2 AI models at once.</div>
-          ) : null}
-          <ZoneTools
-            activeZoneType={activeZoneType}
-            setActiveZoneType={(value) => {
-              setActiveZoneType(value);
-              setCurrentPolygon([]);
-              setPolygonClosed(false);
-            }}
-            currentPolygon={currentPolygon}
-            onClear={() => {
-              setCurrentPolygon([]);
-              setPolygonClosed(false);
-            }}
-            onSave={handleSaveZone}
-            workerCount={workerCount}
-            disabled={!connectedSource}
+
+          {/* Inference controls card */}
+          <section className="card inference-ctrl-card">
+            {/* Status row */}
+            <div className="inference-status-row">
+              <span className={`cuda-badge ${cudaEnabled ? "cuda-on" : cudaEnabled === false ? "cuda-off" : "cuda-loading"}`}>
+                {cudaEnabled === null ? "…" : cudaEnabled ? "CUDA" : "CPU"}
+              </span>
+              <span className={`infer-status-badge ${inferenceStatus}`}>
+                {inferenceStatus === "running" ? "● Running" : inferenceStatus === "stopping" ? "◌ Stopping" : "○ Idle"}
+              </span>
+              <span className="camera-count-badge">
+                {cameraCount} cam{cameraCount > 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Running models (shown only when running) */}
+            {inferenceStatus === "running" && runningModels.length > 0 && (
+              <div className="running-models-row">
+                <span className="running-models-label">Active:</span>
+                {runningModels.map((k) => (
+                  <span key={k} className="running-model-chip">
+                    {MODEL_LABELS[k] || k}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Selected models (shown when idle) */}
+            {inferenceStatus === "idle" && enabledModels.length > 0 && (
+              <div className="running-models-row">
+                <span className="running-models-label">Selected:</span>
+                {enabledModels.map((k) => (
+                  <span key={k} className="selected-model-chip">
+                    {MODEL_LABELS[k] || k}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Start / Stop buttons */}
+            <div className="inference-btn-row">
+              <button
+                type="button"
+                className="button infer-start-btn"
+                onClick={handleStart}
+                disabled={globalLoading || inferenceStatus === "running" || enabledModels.length === 0}
+              >
+                ▶ Start
+              </button>
+              <button
+                type="button"
+                className="button button-secondary infer-stop-btn"
+                onClick={handleStop}
+                disabled={globalLoading || inferenceStatus !== "running"}
+              >
+                ■ Stop
+              </button>
+            </div>
+          </section>
+        </div>
+
+        {/* Center: Camera grid */}
+        <div className="cameras-container">
+          <div className={gridClass}>
+            {slots.map((slot, idx) => (
+              <CameraPanel
+                key={slot}
+                ref={panelRefs.current[idx]}
+                slot={slot}
+                autoConnect
+                enabledModels={enabledModels}
+                onEventsUpdate={(evts, total) =>
+                  setEventsBySlot((prev) => ({ ...prev, [slot]: { events: evts, total } }))
+                }
+                onShowToast={showToast}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Right: Mini Results */}
+        <div className="right-column">
+          <MiniDetectionResults
+            events={mergedEvents}
+            totalCount={totalEventCount}
+            onViewAll={() => navigate("/detections")}
           />
         </div>
       </div>
-
-      <DetectionResults
-        events={events}
-        pagination={pagination}
-        onPageChange={setResultsPage}
-      />
     </div>
   );
 }

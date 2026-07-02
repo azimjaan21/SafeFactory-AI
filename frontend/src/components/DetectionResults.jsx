@@ -5,6 +5,10 @@ const MODEL_LABELS = {
   worker_forklift: "Worker-Forklift Detection",
   danger_zone: "Danger Zone Detection",
   work_zone: "Work Zone Detection",
+  fall_detection: "Fall Detection",
+  running_detection: "Unsafe Running Detection",
+  inactivity_detection: "Inactivity Detection",
+  abnormal_behavior: "Abnormal Behavior Detection",
 };
 
 export default function DetectionResults({ events, pagination, onPageChange }) {

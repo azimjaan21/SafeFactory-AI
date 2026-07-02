@@ -18,6 +18,7 @@ export default function LivePreview({
   canDraw,
   workerCount,
   polygonClosed,
+  compact = false,
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -27,9 +28,7 @@ export default function LivePreview({
     const draw = () => {
       const canvas = canvasRef.current;
       const container = containerRef.current;
-      if (!canvas || !container) {
-        return;
-      }
+      if (!canvas || !container) return;
 
       const width = container.clientWidth;
       const height = container.clientHeight;
@@ -40,9 +39,7 @@ export default function LivePreview({
       context.clearRect(0, 0, width, height);
 
       const drawPolygon = (points, color, dashed = false) => {
-        if (!points?.length) {
-          return;
-        }
+        if (!points?.length) return;
         context.strokeStyle = color;
         context.fillStyle = `${color}33`;
         context.lineWidth = 3;
@@ -51,11 +48,8 @@ export default function LivePreview({
         points.forEach((point, index) => {
           const x = point.x * width;
           const y = point.y * height;
-          if (index === 0) {
-            context.moveTo(x, y);
-          } else {
-            context.lineTo(x, y);
-          }
+          if (index === 0) context.moveTo(x, y);
+          else context.lineTo(x, y);
           context.fillStyle = color;
           context.beginPath();
           context.arc(x, y, 4, 0, Math.PI * 2);
@@ -66,11 +60,8 @@ export default function LivePreview({
         points.forEach((point, index) => {
           const x = point.x * width;
           const y = point.y * height;
-          if (index === 0) {
-            context.moveTo(x, y);
-          } else {
-            context.lineTo(x, y);
-          }
+          if (index === 0) context.moveTo(x, y);
+          else context.lineTo(x, y);
         });
         if (!dashed && points.length >= 3) {
           context.closePath();
@@ -102,15 +93,12 @@ export default function LivePreview({
     const handleFullscreenChange = () => {
       setIsFullscreen(document.fullscreenElement === containerRef.current);
     };
-
     document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   const handleClick = (event) => {
-    if (!canDraw || polygonClosed || !containerRef.current) {
-      return;
-    }
+    if (!canDraw || polygonClosed || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
@@ -118,10 +106,7 @@ export default function LivePreview({
   };
 
   const handleFullscreenToggle = async () => {
-    if (!containerRef.current) {
-      return;
-    }
-
+    if (!containerRef.current) return;
     try {
       if (document.fullscreenElement === containerRef.current) {
         await document.exitFullscreen();
@@ -132,6 +117,32 @@ export default function LivePreview({
       console.error("Failed to toggle fullscreen preview.", error);
     }
   };
+
+  if (compact) {
+    return (
+      <div
+        ref={containerRef}
+        className={`preview-stage preview-stage-compact${canDraw ? " drawing-enabled" : ""}`}
+        onClick={handleClick}
+        onDoubleClick={onFinishPolygon}
+      >
+        {previewUrl ? (
+          <img src={previewUrl} alt="Preview" className="preview-image" />
+        ) : (
+          <div className="preview-placeholder">Connecting…</div>
+        )}
+        <canvas ref={canvasRef} className="preview-overlay" />
+        <button
+          type="button"
+          className="preview-fullscreen-btn"
+          onClick={handleFullscreenToggle}
+          title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+        >
+          {isFullscreen ? "⛶" : "⛶"}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <section className="card preview-card">
@@ -148,21 +159,25 @@ export default function LivePreview({
         onClick={handleClick}
         onDoubleClick={onFinishPolygon}
       >
-        {previewUrl ? <img src={previewUrl} alt="Preview" className="preview-image" /> : <div className="preview-placeholder">Connect a source to load preview.</div>}
+        {previewUrl ? (
+          <img src={previewUrl} alt="Preview" className="preview-image" />
+        ) : (
+          <div className="preview-placeholder">Connect a source to load preview.</div>
+        )}
         <canvas ref={canvasRef} className="preview-overlay" />
       </div>
 
-      <div className="button-row preview-controls">
-        <button type="button" className="button button-secondary" onClick={onPauseResume}>
+      <div className="preview-ctrl-bar">
+        <button type="button" className="preview-ctrl-btn" onClick={onPauseResume}>
           {sessionStatus === "paused" ? "Resume" : "Pause"}
         </button>
-        <button type="button" className="button button-secondary" onClick={onStop}>
+        <button type="button" className="preview-ctrl-btn" onClick={onStop}>
           Stop
         </button>
-        <button type="button" className="button button-secondary" onClick={onSnapshot}>
+        <button type="button" className="preview-ctrl-btn" onClick={onSnapshot}>
           Snapshot
         </button>
-        <button type="button" className="button button-secondary" onClick={handleFullscreenToggle}>
+        <button type="button" className="preview-ctrl-btn" onClick={handleFullscreenToggle}>
           {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
         </button>
       </div>

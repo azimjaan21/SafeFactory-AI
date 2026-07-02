@@ -1,5 +1,5 @@
 const SOURCE_OPTIONS = [
-  { key: "rtsp", label: "RTSP URL" },
+  { key: "rtsp", label: "RTSP" },
   { key: "image", label: "Image" },
   { key: "video", label: "Video" },
 ];
@@ -40,7 +40,7 @@ export default function InputSourceCard({
           <label className="field-label">RTSP URL</label>
           <input
             className="text-input"
-            placeholder="rtsp://admin:******@192.168.1.64:554/stream1"
+            placeholder="rtsp://admin:***@192.168.1.x:554/stream"
             value={rtspUrl}
             onChange={(event) => setRtspUrl(event.target.value)}
           />
@@ -56,14 +56,13 @@ export default function InputSourceCard({
               hidden
             />
             <div className="upload-icon">⇪</div>
-            <div>Drag and drop an image or video here</div>
-            <div className="upload-link">or click to browse</div>
+            <div>Click to browse</div>
             {file ? <div className="upload-file">{file.name}</div> : null}
           </label>
         </>
       )}
 
-      <div className="button-row">
+      <div className="source-btn-row">
         <button type="button" className="button button-secondary" onClick={onConnect} disabled={disabled}>
           Connect
         </button>
@@ -73,7 +72,7 @@ export default function InputSourceCard({
       </div>
 
       <div className="status-row">
-        <span>Source Status</span>
+        <span>Status</span>
         <span className={`status-pill ${sourceStatus === "connected" ? "success" : "muted"}`}>
           {sourceStatus || "disconnected"}
         </span>

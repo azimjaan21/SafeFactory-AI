@@ -88,11 +88,11 @@ REST_FRAMEWORK = {
 }
 
 SAFEFACTORY_MODEL_PATHS = {
-    "ppe": PROJECT_ROOT / "ai_models" / "ppe.pt",
-    "work_situation": PROJECT_ROOT / "ai_models" / "work_situation.pt",
-    "smoke_fire": PROJECT_ROOT / "ai_models" / "fire.pt",
-    "worker_forklift": PROJECT_ROOT / "ai_models" / "forklift.pt",
-    "pose_anchor": PROJECT_ROOT / "ai_models" / "yolo11s-pose.pt",
+    "ppe": BASE_DIR / "ai_models" / "ppe.pt",
+    "work_situation": BASE_DIR / "ai_models" / "work_situation.pt",
+    "smoke_fire": BASE_DIR / "ai_models" / "fire.pt",
+    "worker_forklift": BASE_DIR / "ai_models" / "forklift.pt",
+    "pose_anchor": BASE_DIR / "ai_models" / "yolo11s-pose.pt",
 }
 
 SAFEFACTORY_RESULT_HISTORY_LIMIT = int(os.getenv("SAFEFACTORY_RESULT_HISTORY_LIMIT", "200"))
@@ -100,5 +100,24 @@ SAFEFACTORY_RESULTS_PAGE_SIZE = int(os.getenv("SAFEFACTORY_RESULTS_PAGE_SIZE", "
 SAFEFACTORY_EVENT_COOLDOWN_SECONDS = float(os.getenv("SAFEFACTORY_EVENT_COOLDOWN_SECONDS", "300"))
 SAFEFACTORY_FORKLIFT_WARNING_DISTANCE = int(os.getenv("SAFEFACTORY_FORKLIFT_WARNING_DISTANCE", "400"))
 SAFEFACTORY_FORKLIFT_DANGER_DISTANCE = int(os.getenv("SAFEFACTORY_FORKLIFT_DANGER_DISTANCE", "200"))
-SAFEFACTORY_DEFAULT_CONFIDENCE = float(os.getenv("SAFEFACTORY_DEFAULT_CONFIDENCE", "0.35"))
+SAFEFACTORY_DEFAULT_CONFIDENCE = float(os.getenv("SAFEFACTORY_DEFAULT_CONFIDENCE", "0.25"))
+SAFEFACTORY_POSE_CONFIDENCE = float(os.getenv("SAFEFACTORY_POSE_CONFIDENCE", "0.15"))
 SAFEFACTORY_MAX_STREAM_MODELS = int(os.getenv("SAFEFACTORY_MAX_STREAM_MODELS", "2"))
+# Process every Nth frame for video/RTSP (1 = every frame, 2 = every other frame, 3 = every 3rd frame)
+# Higher value = faster playback but lower detection frequency
+SAFEFACTORY_STREAM_SKIP_FRAMES = int(os.getenv("SAFEFACTORY_STREAM_SKIP_FRAMES", "2"))
+
+# FP16 (half precision) inference. Off by default: some GPUs/drivers (e.g. cards
+# without tensor cores, or mismatched CUDA/cuBLAS builds) crash with
+# "CUBLAS_STATUS_NOT_SUPPORTED" on the attention layers of newer YOLO models when
+# running in half precision, which can hang/crash the GPU driver. FP32 is slower
+# but works everywhere. Set to "1" only if your GPU/driver combo is confirmed stable.
+SAFEFACTORY_USE_HALF_PRECISION = os.getenv("SAFEFACTORY_USE_HALF_PRECISION", "0") == "1"
+
+# Abnormal behavior detection settings
+# SAFEFACTORY_STREAM_FPS: assumed FPS for timing calculations (step freq, angle rate, inactivity timer)
+SAFEFACTORY_STREAM_FPS = float(os.getenv("SAFEFACTORY_STREAM_FPS", "25.0"))
+# SAFEFACTORY_INACTIVITY_TIMEOUT_SECONDS: stillness duration before inactivity alert fires
+SAFEFACTORY_INACTIVITY_TIMEOUT_SECONDS = float(os.getenv("SAFEFACTORY_INACTIVITY_TIMEOUT_SECONDS", "300.0"))
+
+SAFEFACTORY_DEMO_VIDEO_DIR = Path(os.getenv("SAFEFACTORY_DEMO_VIDEO_DIR", str(BASE_DIR / "demo_video")))

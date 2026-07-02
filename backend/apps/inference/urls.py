@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    DemoConnectView,
     InferenceFrameView,
     InferencePauseView,
     InferenceResultsView,
@@ -17,6 +18,7 @@ from .views import (
 
 urlpatterns = [
     path("source/connect/", SourceConnectView.as_view(), name="source-connect"),
+    path("source/connect-demo/", DemoConnectView.as_view(), name="source-connect-demo"),
     path("inference/start/", InferenceStartView.as_view(), name="inference-start"),
     path("inference/pause/", InferencePauseView.as_view(), name="inference-pause"),
     path("inference/resume/", InferenceResumeView.as_view(), name="inference-resume"),

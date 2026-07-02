@@ -12,6 +12,15 @@ MODEL_COLORS = {
     "pose_anchor": (255, 255, 0),
 }
 
+SKELETON_EDGES = [
+    (0, 1), (0, 2), (1, 3), (2, 4),
+    (5, 6), (5, 11), (6, 12), (11, 12),
+    (5, 7), (7, 9), (6, 8), (8, 10),
+    (11, 13), (13, 15), (12, 14), (14, 16),
+]
+
+KP_CONF_THRESHOLD = 0.2
+
 
 class Annotator:
     def draw(self, frame, detections, zones, workers, work_zone_counts, forklift_interactions, global_forklift_status):
@@ -66,9 +75,6 @@ class Annotator:
 
     def _draw_workers(self, frame, workers):
         for worker in workers:
-            anchor = worker.get("anchor")
-            if anchor is None:
-                continue
             status = worker.get("status", "SAFE")
             if status == "DANGER":
                 color = (46, 46, 255)
@@ -76,16 +82,54 @@ class Annotator:
                 color = (0, 210, 255)
             else:
                 color = (46, 184, 92)
+
+            self._draw_pose_skeleton(frame, worker, color)
+
+            anchor = worker.get("anchor")
+            if anchor is None:
+                continue
             cv2.circle(frame, anchor, 6, color, -1)
+            track_id = worker.get("track_id", "")
+            label = f"W{track_id} {status}" if track_id else status
             cv2.putText(
                 frame,
-                status,
+                label,
                 (anchor[0] + 8, anchor[1] - 8),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.55,
                 color,
                 2,
             )
+
+    def _draw_pose_skeleton(self, frame, worker, color):
+        kp_xy = worker.get("keypoints_xy")
+        kp_norm = worker.get("keypoints_norm")
+        if kp_xy is None or len(kp_xy) < 17:
+            return
+
+        for a, b in SKELETON_EDGES:
+            ax, ay = float(kp_xy[a][0]), float(kp_xy[a][1])
+            bx, by = float(kp_xy[b][0]), float(kp_xy[b][1])
+            if not (np.isfinite(ax) and np.isfinite(ay) and np.isfinite(bx) and np.isfinite(by)):
+                continue
+            xa, ya, xb, yb = int(ax), int(ay), int(bx), int(by)
+            if xa <= 0 or ya <= 0 or xb <= 0 or yb <= 0:
+                continue
+            if kp_norm is not None:
+                if kp_norm[a, 2] < KP_CONF_THRESHOLD or kp_norm[b, 2] < KP_CONF_THRESHOLD:
+                    continue
+            cv2.line(frame, (xa, ya), (xb, yb), color, 2)
+
+        for i in range(len(kp_xy)):
+            fx, fy = float(kp_xy[i][0]), float(kp_xy[i][1])
+            if not (np.isfinite(fx) and np.isfinite(fy)):
+                continue
+            x, y = int(fx), int(fy)
+            if x <= 0 or y <= 0:
+                continue
+            if kp_norm is not None and kp_norm[i, 2] < KP_CONF_THRESHOLD:
+                continue
+            cv2.circle(frame, (x, y), 4, color, -1)
 
     def _draw_forklift_interactions(self, frame, interactions):
         for interaction in interactions:

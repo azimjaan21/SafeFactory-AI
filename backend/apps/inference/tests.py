@@ -6,6 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from .models import Source
+from .services.camera_registry import get_session
 from .services.inference_engine import InferenceEngine
 from .services.forklift_logic import get_safety_status, point_to_bbox_distance
 from .services.zone_logic import ZoneAnalyzer, get_worker_anchor, point_in_polygon
@@ -126,3 +127,15 @@ class ApiTests(TestCase):
         get_response = self.client.get(f"/api/zones/?source_id={source.id}")
         self.assertEqual(get_response.status_code, 200)
         self.assertEqual(len(get_response.data), 1)
+
+    def test_frame_endpoint_requires_matching_source_id(self):
+        session = get_session(0)
+        session.source_id = 7
+        session.latest_jpeg = b"frame-bytes"
+
+        mismatch_response = self.client.get("/api/inference/frame/?slot=0&source_id=8")
+        self.assertEqual(mismatch_response.status_code, 404)
+
+        match_response = self.client.get("/api/inference/frame/?slot=0&source_id=7")
+        self.assertEqual(match_response.status_code, 200)
+        self.assertEqual(match_response.content, b"frame-bytes")

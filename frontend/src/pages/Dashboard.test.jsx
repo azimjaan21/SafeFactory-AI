@@ -5,9 +5,11 @@ import { vi } from "vitest";
 import Dashboard from "./Dashboard";
 
 vi.mock("../services/api", () => ({
+  connectDemo: vi.fn(() => Promise.reject(new Error("no demo in tests"))),
   connectSource: vi.fn(),
   getFrameUrl: vi.fn(() => "http://localhost/frame.jpg"),
-  getResults: vi.fn(),
+  getResults: vi.fn(() => Promise.reject(new Error("no results in tests"))),
+  getSettings: vi.fn(() => Promise.resolve({ runtime: { gpu_enabled: false } })),
   getStreamUrl: vi.fn(() => "http://localhost/stream"),
   getZones: vi.fn(() => Promise.resolve([])),
   pauseInference: vi.fn(),
@@ -26,10 +28,10 @@ describe("Dashboard", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("AI Model Tester")).toBeInTheDocument();
-    expect(screen.getByText("Input Source")).toBeInTheDocument();
-    expect(screen.getByText("Live Preview")).toBeInTheDocument();
+    expect(screen.getByText("SafeFactory AI")).toBeInTheDocument();
+    expect(screen.getByText("Camera 1")).toBeInTheDocument();
     expect(screen.getByText("AI Models")).toBeInTheDocument();
-    expect(screen.getByText("Detection Results")).toBeInTheDocument();
+    expect(screen.getByText("Recent Detections")).toBeInTheDocument();
+    expect(screen.getByText("▦ Draw Zone")).toBeInTheDocument();
   });
 });

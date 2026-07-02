@@ -79,26 +79,51 @@ class SessionManager:
         self._store_preview_frame(frame)
 
     def _run_stream(self, source: Source):
-        while not self.stop_event.is_set():
-            if self.pause_event.is_set():
-                time.sleep(0.1)
-                continue
+        import logging
+        import traceback as _tb
 
-            ok, frame = self.capture.read()
-            if not ok or frame is None:
-                self.status = "completed"
-                source.status = Source.STATUS_COMPLETED
+        logger = logging.getLogger(__name__)
+        skip = settings.SAFEFACTORY_STREAM_SKIP_FRAMES
+        frame_count = 0
+
+        try:
+            while not self.stop_event.is_set():
+                if self.pause_event.is_set():
+                    time.sleep(0.05)
+                    continue
+
+                ok, frame = self.capture.read()
+                if not ok or frame is None:
+                    if source.source_type == Source.TYPE_VIDEO:
+                        self.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        continue
+                    self.status = "completed"
+                    source.status = Source.STATUS_COMPLETED
+                    source.save(update_fields=["status", "updated_at"])
+                    break
+
+                frame_count += 1
+                if skip > 1 and frame_count % skip != 0:
+                    continue
+
+                zones = list(Zone.objects.filter(source_id=source.id))
+                result = self.engine.process_frame(frame, self.enabled_models, zones)
+                self._store_result(result)
+
+        except Exception:
+            err = _tb.format_exc()
+            logger.error("Inference thread crashed:\n%s", err)
+            print(f"\n[SafeFactory] Inference thread crashed:\n{err}")
+            self.status = "error"
+            try:
+                source.status = Source.STATUS_ERROR
                 source.save(update_fields=["status", "updated_at"])
-                break
-
-            zones = list(Zone.objects.filter(source_id=source.id))
-            result = self.engine.process_frame(frame, self.enabled_models, zones)
-            self._store_result(result)
-            time.sleep(0.03)
-
-        if self.capture is not None:
-            self.capture.release()
-            self.capture = None
+            except Exception:
+                pass
+        finally:
+            if self.capture is not None:
+                self.capture.release()
+                self.capture = None
 
     def _store_result(self, result):
         frame = result["frame"]
@@ -215,9 +240,26 @@ class SessionManager:
         page = max(1, min(page, total_pages))
         start_index = (page - 1) * page_size
         end_index = start_index + page_size
+
+        source_info = None
+        if self.source_id:
+            try:
+                src = Source.objects.get(id=self.source_id)
+                source_info = {
+                    "id": src.id,
+                    "name": src.name,
+                    "source_type": src.source_type,
+                    "status": src.status,
+                    "frame_width": src.frame_width,
+                    "frame_height": src.frame_height,
+                }
+            except Source.DoesNotExist:
+                pass
+
         return {
             "session_id": self.session_id,
             "source_id": self.source_id,
+            "source": source_info,
             "status": self.status,
             "enabled_models": self.enabled_models,
             "worker_count": self.worker_count,
@@ -240,6 +282,3 @@ class SessionManager:
         filename = f"snapshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
         snapshot.image.save(filename, ContentFile(encoded.tobytes()), save=True)
         return snapshot
-
-
-session_manager = SessionManager()

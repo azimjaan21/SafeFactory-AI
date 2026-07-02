@@ -11,6 +11,9 @@ MODEL_KEYS = {
     "worker_forklift",
     "danger_zone",
     "work_zone",
+    "fall_detection",
+    "running_detection",
+    "inactivity_detection",
 }
 
 

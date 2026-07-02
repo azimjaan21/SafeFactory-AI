@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/Dashboard";
+import DetectionsPage from "./pages/DetectionsPage";
 import Settings from "./pages/Settings";
 
 export default function App() {
@@ -11,6 +12,7 @@ export default function App() {
       <main className="app-main">
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/detections" element={<DetectionsPage />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
